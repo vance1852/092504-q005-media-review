@@ -9,8 +9,13 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from .errors import DomainError, ValidationError
+from .review import ReviewService
 from .service import DomainService
 from .storage import Database
+
+
+def _segments(path: str) -> list[str]:
+    return [segment for segment in urlparse(path).path.split("/") if segment]
 
 
 def route(service: DomainService, method: str, path: str, body: dict[str, Any] | None,
@@ -21,6 +26,8 @@ def route(service: DomainService, method: str, path: str, body: dict[str, Any] |
     body = body or {}
     parsed = urlparse(path)
     actor_id = headers.get("X-Actor-Id", "")
+    review = ReviewService(service)
+    segments = _segments(path)
     try:
         if method == "GET" and parsed.path == "/health":
             valid, count = service.verify_audit()
@@ -48,6 +55,57 @@ def route(service: DomainService, method: str, path: str, body: dict[str, Any] |
             query = parse_qs(parsed.query)
             after = int(query.get("after_sequence", ["0"])[0])
             return 200, {"items": service.audit_events(after)}
+
+        # ------------------------------------------------- 作品评审后台
+        if method == "POST" and parsed.path == "/competitions":
+            receipt = review.create_competition(actor_id=actor_id, **body)
+            return 200 if receipt.replayed else 201, receipt.__dict__
+        if method == "POST" and parsed.path == "/works":
+            receipt = review.register_work(actor_id=actor_id, **body)
+            return 200 if receipt.replayed else 201, receipt.__dict__
+        if method == "POST" and parsed.path == "/work-versions":
+            receipt = review.submit_version(actor_id=actor_id, **body)
+            return 200 if receipt.replayed else 201, receipt.__dict__
+        if method == "POST" and parsed.path == "/credentials":
+            receipt = review.register_credential(actor_id=actor_id, **body)
+            return 200 if receipt.replayed else 201, receipt.__dict__
+        if method == "POST" and parsed.path == "/freeze":
+            receipt = review.freeze_competition(actor_id=actor_id, **body)
+            return 200 if receipt.replayed else 201, receipt.__dict__
+        if method == "POST" and parsed.path == "/admit-quarantine":
+            receipt = review.admit_quarantine(actor_id=actor_id, **body)
+            return 200 if receipt.replayed else 201, receipt.__dict__
+        if method == "POST" and parsed.path == "/conflicts":
+            receipt = review.declare_conflict(actor_id=actor_id, **body)
+            return 200 if receipt.replayed else 201, receipt.__dict__
+        if method == "POST" and parsed.path == "/assignments":
+            receipt = review.assign_reviewers(actor_id=actor_id, **body)
+            return 200 if receipt.replayed else 201, receipt.__dict__
+        if method == "POST" and parsed.path == "/recusals":
+            receipt = review.recuse(actor_id=actor_id, **body)
+            return 200 if receipt.replayed else 201, receipt.__dict__
+        if method == "POST" and parsed.path == "/scores":
+            score, outcome = review.submit_score(actor_id=actor_id, **body)
+            return 201 if outcome == "created" else 200, {"outcome": outcome, "score": score.__dict__}
+        if method == "POST" and parsed.path == "/appeals":
+            receipt = review.open_appeal(actor_id=actor_id, **body)
+            return 200 if receipt.replayed else 201, receipt.__dict__
+        if method == "POST" and parsed.path == "/appeal-reviews":
+            receipt = review.submit_appeal_review(actor_id=actor_id, **body)
+            return 200 if receipt.replayed else 201, receipt.__dict__
+        if method == "POST" and parsed.path == "/appeal-decisions":
+            receipt = review.decide_appeal(actor_id=actor_id, **body)
+            return 200 if receipt.replayed else 201, receipt.__dict__
+        if method == "GET" and len(segments) == 3 and segments[0] == "works":
+            work_id = segments[1]
+            if segments[2] == "public":
+                return 200, review.public_status(work_id)
+            if segments[2] == "audit":
+                return 200, review.work_audit_detail(actor_id=actor_id, work_id=work_id)
+            if segments[2] == "versions":
+                return 200, {"items": [item.__dict__ for item in review.list_versions(work_id)]}
+            if segments[2] == "decisions":
+                return 200, {"items": review.list_decisions(work_id)}
         return 404, {"error": "route_not_found", "message": "接口不存在"}
     except DomainError as exc:
         return exc.status, {"error": exc.code, "message": str(exc)}
