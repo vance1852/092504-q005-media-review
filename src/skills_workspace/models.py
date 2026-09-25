@@ -49,3 +49,13 @@ class WriteReceipt:
     resource_type: str
     resource_id: str
     replayed: bool
+
+
+@dataclass(frozen=True)
+class ScoreReceipt:
+    """描述一次评分（原审或复核）决定的稳定结果。"""
+
+    request_id: str
+    decision_id: str
+    total: float
+    replayed: bool

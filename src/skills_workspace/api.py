@@ -9,6 +9,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from .errors import DomainError, ValidationError
+from .review import ReviewService
 from .service import DomainService
 from .storage import Database
 
@@ -21,6 +22,7 @@ def route(service: DomainService, method: str, path: str, body: dict[str, Any] |
     body = body or {}
     parsed = urlparse(path)
     actor_id = headers.get("X-Actor-Id", "")
+    review = ReviewService(service.database, service.clock)
     try:
         if method == "GET" and parsed.path == "/health":
             valid, count = service.verify_audit()
@@ -48,6 +50,46 @@ def route(service: DomainService, method: str, path: str, body: dict[str, Any] |
             query = parse_qs(parsed.query)
             after = int(query.get("after_sequence", ["0"])[0])
             return 200, {"items": service.audit_events(after)}
+
+        # ---- 作品评审后台 ----
+        segments = [segment for segment in parsed.path.split("/") if segment]
+        if method == "POST" and parsed.path == "/competitions":
+            receipt = review.register_competition(actor_id=actor_id, **body)
+            return 200 if receipt.replayed else 201, receipt.__dict__
+        if method == "POST" and parsed.path == "/competitions/freeze":
+            receipt = review.freeze_competition(actor_id=actor_id, **body)
+            return 200 if receipt.replayed else 201, receipt.__dict__
+        if method == "POST" and parsed.path == "/works":
+            receipt = review.register_work(actor_id=actor_id, **body)
+            return 200 if receipt.replayed else 201, receipt.__dict__
+        if method == "POST" and parsed.path == "/submissions":
+            receipt = review.submit_version(actor_id=actor_id, **body)
+            return 200 if receipt.replayed else 201, receipt.__dict__
+        if method == "POST" and parsed.path == "/conflicts":
+            receipt = review.register_conflict(actor_id=actor_id, **body)
+            return 200 if receipt.replayed else 201, receipt.__dict__
+        if method == "POST" and parsed.path == "/assignments":
+            receipt = review.assign_reviewers(actor_id=actor_id, **body)
+            return 200 if receipt.replayed else 201, receipt.__dict__
+        if method == "POST" and parsed.path == "/assignments/recuse":
+            receipt = review.recuse_assignment(actor_id=actor_id, **body)
+            return 200 if receipt.replayed else 201, receipt.__dict__
+        if method == "POST" and parsed.path == "/scores":
+            receipt = review.submit_score(actor_id=actor_id, **body)
+            return 200 if receipt.replayed else 201, receipt.__dict__
+        if method == "POST" and parsed.path == "/appeals":
+            receipt = review.file_appeal(actor_id=actor_id, **body)
+            return 200 if receipt.replayed else 201, receipt.__dict__
+        if method == "POST" and parsed.path == "/appeals/reviews":
+            receipt = review.submit_appeal_review_score(actor_id=actor_id, **body)
+            return 200 if receipt.replayed else 201, receipt.__dict__
+        if method == "POST" and parsed.path == "/appeals/rule":
+            receipt = review.rule_appeal(actor_id=actor_id, **body)
+            return 200 if receipt.replayed else 201, receipt.__dict__
+        if method == "GET" and len(segments) == 3 and segments[0] == "works" and segments[2] == "public":
+            return 200, review.public_work(segments[1])
+        if method == "GET" and len(segments) == 3 and segments[0] == "works" and segments[2] == "audit":
+            return 200, review.audit_work(actor_id=actor_id, work_id=segments[1])
         return 404, {"error": "route_not_found", "message": "接口不存在"}
     except DomainError as exc:
         return exc.status, {"error": exc.code, "message": str(exc)}

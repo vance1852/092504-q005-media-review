@@ -63,6 +63,111 @@ CREATE TABLE IF NOT EXISTS audit_events (
     event_hash TEXT NOT NULL UNIQUE,
     occurred_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS competitions (
+    competition_id TEXT PRIMARY KEY,
+    organization_id TEXT NOT NULL REFERENCES organizations(organization_id),
+    title TEXT NOT NULL,
+    deadline TEXT NOT NULL,
+    reviewers_per_work INTEGER NOT NULL CHECK(reviewers_per_work BETWEEN 1 AND 9),
+    score_tolerance REAL NOT NULL CHECK(score_tolerance >= 0),
+    rubric_json TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('open','frozen')) DEFAULT 'open',
+    frozen_at TEXT
+);
+CREATE TABLE IF NOT EXISTS works (
+    work_id TEXT PRIMARY KEY,
+    competition_id TEXT NOT NULL REFERENCES competitions(competition_id),
+    author_actor_id TEXT NOT NULL REFERENCES actors(actor_id),
+    author_organization_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    pseudonym TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(competition_id, author_actor_id)
+);
+CREATE TABLE IF NOT EXISTS submissions (
+    submission_id TEXT PRIMARY KEY,
+    work_id TEXT NOT NULL REFERENCES works(work_id),
+    version_no INTEGER NOT NULL CHECK(version_no >= 1),
+    package_name TEXT NOT NULL,
+    content_digest TEXT NOT NULL,
+    script_summary_json TEXT NOT NULL,
+    material_manifest_json TEXT NOT NULL,
+    interaction_notes_json TEXT NOT NULL,
+    author_declaration_json TEXT NOT NULL,
+    delivery_checklist_json TEXT NOT NULL,
+    evidence_status TEXT NOT NULL CHECK(evidence_status IN ('complete','pending_evidence')),
+    evidence_gap_json TEXT NOT NULL,
+    submitted_by TEXT NOT NULL REFERENCES actors(actor_id),
+    created_at TEXT NOT NULL,
+    UNIQUE(work_id, version_no),
+    UNIQUE(work_id, content_digest)
+);
+CREATE TABLE IF NOT EXISTS snapshots (
+    snapshot_id TEXT PRIMARY KEY,
+    competition_id TEXT NOT NULL UNIQUE REFERENCES competitions(competition_id),
+    deadline TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS snapshot_versions (
+    snapshot_id TEXT NOT NULL REFERENCES snapshots(snapshot_id),
+    work_id TEXT NOT NULL REFERENCES works(work_id),
+    submission_id TEXT NOT NULL UNIQUE REFERENCES submissions(submission_id),
+    version_no INTEGER NOT NULL,
+    content_digest TEXT NOT NULL,
+    evidence_status TEXT NOT NULL CHECK(evidence_status IN ('complete','pending_evidence')),
+    PRIMARY KEY(snapshot_id, work_id)
+);
+CREATE TABLE IF NOT EXISTS reviewer_conflicts (
+    conflict_id TEXT PRIMARY KEY,
+    reviewer_id TEXT NOT NULL REFERENCES actors(actor_id),
+    work_id TEXT NOT NULL REFERENCES works(work_id),
+    reason TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(reviewer_id, work_id)
+);
+CREATE TABLE IF NOT EXISTS review_assignments (
+    assignment_id TEXT PRIMARY KEY,
+    snapshot_id TEXT NOT NULL REFERENCES snapshots(snapshot_id),
+    work_id TEXT NOT NULL REFERENCES works(work_id),
+    reviewer_id TEXT NOT NULL REFERENCES actors(actor_id),
+    slot INTEGER NOT NULL CHECK(slot >= 1),
+    status TEXT NOT NULL CHECK(status IN ('assigned','recused')),
+    assigned_at TEXT NOT NULL,
+    UNIQUE(snapshot_id, work_id, reviewer_id)
+);
+CREATE TABLE IF NOT EXISTS score_decisions (
+    decision_id TEXT PRIMARY KEY,
+    assignment_id TEXT NOT NULL UNIQUE REFERENCES review_assignments(assignment_id),
+    submission_id TEXT NOT NULL REFERENCES submissions(submission_id),
+    dimensions_json TEXT NOT NULL,
+    total REAL NOT NULL,
+    rationale TEXT NOT NULL,
+    decided_by TEXT NOT NULL REFERENCES actors(actor_id),
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS appeals (
+    appeal_id TEXT PRIMARY KEY,
+    work_id TEXT NOT NULL REFERENCES works(work_id),
+    snapshot_id TEXT NOT NULL REFERENCES snapshots(snapshot_id),
+    reason TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('open','ruled')) DEFAULT 'open',
+    filed_by TEXT NOT NULL REFERENCES actors(actor_id),
+    final_total REAL,
+    final_basis TEXT,
+    created_at TEXT NOT NULL,
+    ruled_at TEXT
+);
+CREATE TABLE IF NOT EXISTS appeal_reviews (
+    review_id TEXT PRIMARY KEY,
+    appeal_id TEXT NOT NULL REFERENCES appeals(appeal_id),
+    submission_id TEXT NOT NULL REFERENCES submissions(submission_id),
+    reviewer_id TEXT NOT NULL REFERENCES actors(actor_id),
+    dimensions_json TEXT NOT NULL,
+    total REAL NOT NULL,
+    rationale TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(appeal_id, reviewer_id)
+);
 """
 
 

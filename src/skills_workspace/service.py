@@ -9,14 +9,13 @@ from typing import Any, Callable
 
 from .audit import append_event, canonical_json, digest, verify_chain
 from .clock import Clock, SystemClock
-from .domain import is_allowed_category
+from .domain import ROLES, is_allowed_category
 from .errors import ConflictError, NotFoundError, PermissionDenied, ValidationError
 from .models import Actor, DomainRecord, Site, WriteReceipt
 from .storage import Database
 
 
 IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{1,63}$")
-ROLES = frozenset({"admin", "operator", "reviewer", "auditor"})
 
 
 class DomainService:
